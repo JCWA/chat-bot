@@ -90,3 +90,69 @@ LANGUAGE sql STABLE AS $$
   ORDER BY embedding <=> query_embedding
   LIMIT match_count;
 $$;
+
+-- 5. 외관 AND 검색 함수
+CREATE OR REPLACE FUNCTION search_by_appearance(
+  p_colors  TEXT[] DEFAULT NULL,
+  p_shapes  TEXT[] DEFAULT NULL,
+  p_prints  TEXT[] DEFAULT NULL,
+  p_limit   INT   DEFAULT 5
+)
+RETURNS TABLE (
+  item_seq     TEXT,
+  item_name    TEXT,
+  drug_shape   TEXT,
+  color_class1 TEXT,
+  color_class2 TEXT,
+  print_front  TEXT,
+  print_back   TEXT,
+  line_front   TEXT,
+  line_back    TEXT,
+  form_code_name TEXT,
+  entp_name    TEXT,
+  chart        TEXT,
+  class_name   TEXT,
+  item_image   TEXT,
+  efcy         TEXT,
+  use_method   TEXT,
+  side_effect  TEXT
+)
+LANGUAGE sql STABLE AS $$
+  SELECT
+    item_seq, item_name, drug_shape, color_class1, color_class2,
+    print_front, print_back, line_front, line_back,
+    form_code_name, entp_name, chart, class_name, item_image,
+    efcy, use_method, side_effect
+  FROM medicines
+  WHERE
+    -- 색상 필터 (AND): 색상1 또는 색상2에 매칭
+    (p_colors IS NULL OR EXISTS (
+      SELECT 1 FROM unnest(p_colors) c
+      WHERE color_class1 ILIKE '%' || c || '%'
+         OR color_class2 ILIKE '%' || c || '%'
+    ))
+    -- 모양 필터 (AND)
+    AND (p_shapes IS NULL OR EXISTS (
+      SELECT 1 FROM unnest(p_shapes) s
+      WHERE drug_shape ILIKE '%' || s || '%'
+    ))
+    -- 식별문자 필터 (AND): 1~2자는 정확 매칭, 3자 이상은 부분 매칭
+    AND (p_prints IS NULL OR EXISTS (
+      SELECT 1 FROM unnest(p_prints) p
+      WHERE
+        CASE WHEN length(p) <= 2 THEN
+          print_front = p OR print_back = p
+        ELSE
+          print_front ILIKE '%' || p || '%'
+          OR print_back ILIKE '%' || p || '%'
+        END
+    ))
+  ORDER BY
+    -- 식별문자 정확 매칭 우선 정렬
+    CASE WHEN p_prints IS NOT NULL AND EXISTS (
+      SELECT 1 FROM unnest(p_prints) p
+      WHERE print_front = p OR print_back = p
+    ) THEN 0 ELSE 1 END,
+    item_name
+  LIMIT p_limit;
+$$;

@@ -98,9 +98,9 @@ export class RetrievalService {
     // 3) 약효분류 검색
     const classResults = await this.classSearch(query, topK)
 
-    // 4) 시맨틱 검색 — 위 결과가 부족할 때만
+    // 4) 시맨틱 검색 — 외관 키워드가 없거나 결과 부족 시 실행 (동의어 매칭용)
     const foundSoFar = nameResults.length + keywordResults.length + classResults.length
-    const semanticResults = foundSoFar < topK
+    const semanticResults = (!hasAppearanceQuery || foundSoFar < topK)
       ? await this.semanticSearch(query, topK)
       : []
 
@@ -176,7 +176,7 @@ export class RetrievalService {
     return (data as MedicineResult[]) ?? []
   }
 
-  /** 키워드 검색 — 색상·모양·식별문자를 AND로 필터링 */
+  /** 키워드 검색 — RPC로 정확한 AND 필터링 */
   private async keywordSearch(
     colors: string[],
     shapes: string[],
@@ -185,22 +185,13 @@ export class RetrievalService {
   ): Promise<MedicineResult[]> {
     if (!colors.length && !shapes.length && !prints.length) return []
 
-    const select = 'item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name,item_image,efcy,use_method,side_effect'
+    const { data, error } = await this.supabase.rpc('search_by_appearance', {
+      p_colors: colors.length > 0 ? colors : null,
+      p_shapes: shapes.length > 0 ? shapes : null,
+      p_prints: prints.length > 0 ? prints : null,
+      p_limit: topK,
+    })
 
-    let q = this.supabase.from('medicines').select(select)
-
-    // 각 조건을 AND로 체이닝 (조건 내 여러 값은 OR)
-    if (colors.length) {
-      q = q.or(colors.map((c) => `color_class1.ilike.%${c}%,color_class2.ilike.%${c}%`).join(','))
-    }
-    if (shapes.length) {
-      q = q.or(shapes.map((s) => `drug_shape.ilike.%${s}%`).join(','))
-    }
-    if (prints.length) {
-      q = q.or(prints.map((p) => `print_front.ilike.%${p}%,print_back.ilike.%${p}%`).join(','))
-    }
-
-    const { data, error } = await q.limit(topK)
     if (error) {
       console.error('[RetrievalService] keyword search error:', error.message)
       return []

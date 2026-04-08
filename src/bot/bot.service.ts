@@ -41,7 +41,7 @@ export class BotService {
   ) {}
 
   private get model(): string {
-    return process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile'
+    return process.env.GROQ_MODEL ?? 'llama-3.1-8b-instant'
   }
 
   private get contextLimit(): number {

@@ -80,7 +80,7 @@ export class RetrievalService {
   }
 
   /** 하이브리드 검색: 우선순위별 단계적 검색, 상위 단계 결과가 있으면 하위 단계는 섞지 않음 */
-  async search(query: string, topK = 5): Promise<MedicineResult[]> {
+  async search(query: string, topK = 3): Promise<MedicineResult[]> {
     const { colors, shapes, prints } = extractKeywords(query)
     const hasAppearanceQuery = colors.length > 0 || shapes.length > 0 || prints.length > 0
 
@@ -215,11 +215,9 @@ export class RetrievalService {
           (m.line_front || m.line_back) &&
             `분할선: 앞(${m.line_front ?? '-'}) 뒤(${m.line_back ?? '-'})`,
           m.class_name && `약효분류: ${m.class_name}`,
-          m.efcy && `효능: ${m.efcy}`,
-          m.use_method && `용법: ${m.use_method}`,
-          m.side_effect && `부작용: ${m.side_effect}`,
-          m.chart && `성상: ${m.chart}`,
-          m.item_image && `이미지: ${m.item_image}`,
+          m.efcy && `효능: ${m.efcy.slice(0, 100)}`,
+          m.use_method && `용법: ${m.use_method.slice(0, 80)}`,
+          m.side_effect && `부작용: ${m.side_effect.slice(0, 80)}`,
         ]
           .filter(Boolean)
           .join(', ')

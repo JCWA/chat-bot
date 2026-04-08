@@ -59,6 +59,9 @@ RETURNS TABLE (
   entp_name    TEXT,
   chart        TEXT,
   class_name   TEXT,
+  efcy         TEXT,
+  use_method   TEXT,
+  side_effect  TEXT,
   similarity   float
 )
 LANGUAGE sql STABLE AS $$
@@ -76,6 +79,9 @@ LANGUAGE sql STABLE AS $$
     entp_name,
     chart,
     class_name,
+    efcy,
+    use_method,
+    side_effect,
     1 - (embedding <=> query_embedding) AS similarity
   FROM medicines
   WHERE 1 - (embedding <=> query_embedding) > match_threshold

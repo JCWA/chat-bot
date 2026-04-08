@@ -16,6 +16,9 @@ export interface MedicineResult {
   entp_name: string
   chart: string
   class_name?: string
+  efcy?: string
+  use_method?: string
+  side_effect?: string
   similarity?: number
 }
 
@@ -109,7 +112,7 @@ export class RetrievalService {
 
   /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 3자 이상 토큰으로 검색 */
   private async nameSearch(query: string, topK: number): Promise<MedicineResult[]> {
-    const select = 'item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name'
+    const select = 'item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name,efcy,use_method,side_effect'
 
     // 1) 전체 쿼리 문자열로 정확 검색
     const fullQuery = query.replace(/[^가-힣a-zA-Z0-9]/g, '').trim()
@@ -146,7 +149,7 @@ export class RetrievalService {
     const orFilter = tokens.map((t) => `class_name.ilike.%${t}%`).join(',')
     const { data, error } = await this.supabase
       .from('medicines')
-      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name,efcy,use_method,side_effect')
       .or(orFilter)
       .limit(topK)
 
@@ -164,7 +167,7 @@ export class RetrievalService {
 
     let q = this.supabase
       .from('medicines')
-      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name,efcy,use_method,side_effect')
       .limit(topK)
 
     if (prints.length) {
@@ -218,6 +221,9 @@ export class RetrievalService {
           (m.line_front || m.line_back) &&
             `분할선: 앞(${m.line_front ?? '-'}) 뒤(${m.line_back ?? '-'})`,
           m.class_name && `약효분류: ${m.class_name}`,
+          m.efcy && `효능: ${m.efcy}`,
+          m.use_method && `용법: ${m.use_method}`,
+          m.side_effect && `부작용: ${m.side_effect}`,
           m.chart && `성상: ${m.chart}`,
         ]
           .filter(Boolean)

@@ -37,7 +37,7 @@ interface ApiResponse {
 export class IngestionService {
   private readonly apiUrl =
     'https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03'
-  private readonly BATCH_SIZE = 10  // HF API 배치 크기
+  private readonly BATCH_SIZE = 32  // HF API 배치 크기
   private readonly PAGE_SIZE = 100  // API 한 번에 가져올 수량
   private _supabase: SupabaseClient | null = null
 
@@ -126,7 +126,7 @@ export class IngestionService {
     if (error) throw new Error(`Supabase upsert error: ${error.message}`)
   }
 
-  /** 수집 실행 — maxPages 미지정 시 전체 수집 */
+  /** 수집 실행 — maxPages 미지정 시 전체 수집. fetch와 임베딩을 페이지 단위로 인터리브 */
   async run(maxPages?: number): Promise<{ processed: number; total: number }> {
     console.log('[Ingestion] 수집 시작')
 
@@ -137,19 +137,11 @@ export class IngestionService {
     console.log(`[Ingestion] 전체 ${totalCount}개, ${totalPages}페이지 중 ${pagesToFetch}페이지 수집`)
 
     let processed = 0
-    const allPages = [firstItems]
 
-    for (let page = 2; page <= pagesToFetch; page++) {
-      const { items } = await this.fetchPage(page)
-      allPages.push(items)
-    }
-
-    for (const pageItems of allPages) {
-      // BATCH_SIZE 단위로 임베딩
+    const processPage = async (pageItems: MedicineItem[]) => {
       for (let i = 0; i < pageItems.length; i += this.BATCH_SIZE) {
         const batch = pageItems.slice(i, i + this.BATCH_SIZE)
         const texts = batch.map((item) => this.toEmbedText(item))
-
         try {
           const embeddings = await this.embeddingService.embedBatch(texts)
           await this.upsertBatch(batch, embeddings)
@@ -158,10 +150,17 @@ export class IngestionService {
         } catch (err) {
           console.error(`[Ingestion] 배치 오류 (i=${i}):`, err)
         }
-
-        // HF API rate limit 방지
-        await new Promise((r) => setTimeout(r, 300))
+        await new Promise((r) => setTimeout(r, 100))
       }
+    }
+
+    // 1페이지 먼저 처리
+    await processPage(firstItems)
+
+    // 2페이지부터 fetch 즉시 처리 (메모리에 쌓지 않음)
+    for (let page = 2; page <= pagesToFetch; page++) {
+      const { items } = await this.fetchPage(page)
+      await processPage(items)
     }
 
     console.log(`[Ingestion] 완료 — ${processed}개 처리`)

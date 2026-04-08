@@ -15,7 +15,48 @@ export interface MedicineResult {
   form_code_name: string
   entp_name: string
   chart: string
-  similarity: number
+  similarity?: number
+}
+
+// 사용자 쿼리에서 약 특징 키워드 추출
+const COLOR_MAP: Record<string, string> = {
+  흰색: '하양', 하얀: '하양', 하양: '하양', 백색: '하양',
+  빨간: '빨강', 빨강: '빨강', 적색: '빨강',
+  노란: '노랑', 노랑: '노랑', 황색: '노랑',
+  파란: '파랑', 파랑: '파랑', 청색: '파랑',
+  초록: '초록', 녹색: '초록', 초록색: '초록',
+  연두: '연두', 연두색: '연두',
+  주황: '주황', 오렌지: '주황',
+  보라: '보라', 자주: '자주', 분홍: '분홍',
+  갈색: '갈색', 검정: '검정', 회색: '회색',
+}
+const SHAPE_MAP: Record<string, string> = {
+  원형: '원형', 둥근: '원형', 동그란: '원형', 동그랗: '원형',
+  타원: '타원형', 타원형: '타원형', 계란형: '타원형',
+  장방형: '장방형', 직사각: '장방형', 긴: '장방형',
+  삼각: '삼각형', 삼각형: '삼각형',
+  사각: '사각형', 사각형: '사각형', 네모: '사각형',
+  오각: '오각형', 육각: '육각형', 팔각: '팔각형',
+  기타: '기타',
+}
+
+function extractKeywords(query: string): { colors: string[]; shapes: string[]; prints: string[] } {
+  const q = query.toLowerCase()
+  const colors = Object.entries(COLOR_MAP)
+    .filter(([k]) => q.includes(k))
+    .map(([, v]) => v)
+    .filter((v, i, a) => a.indexOf(v) === i)
+
+  const shapes = Object.entries(SHAPE_MAP)
+    .filter(([k]) => q.includes(k))
+    .map(([, v]) => v)
+    .filter((v, i, a) => a.indexOf(v) === i)
+
+  // 영문/숫자 식별문자 추출 (2자 이상 대문자 or 숫자 조합)
+  const prints = (query.match(/[A-Z0-9]{2,}/g) ?? [])
+    .filter((p) => p !== 'IDG' ? true : true) // 전부 허용
+
+  return { colors, shapes, prints }
 }
 
 @Injectable()
@@ -34,24 +75,79 @@ export class RetrievalService {
     return this._supabase
   }
 
+  /** 하이브리드 검색: 키워드 필터 우선, 시맨틱 보완 */
   async search(query: string, topK = 5): Promise<MedicineResult[]> {
-    const embedding = await this.embeddingService.embed(query)
+    const { colors, shapes, prints } = extractKeywords(query)
 
-    const { data, error } = await this.supabase.rpc('match_medicines', {
-      query_embedding: embedding,
-      match_threshold: 0.4,
-      match_count: topK,
-    })
+    // 1) 키워드 필터 검색
+    const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)
 
-    if (error) {
-      console.error('[RetrievalService] Supabase RPC error:', error)
-      return []
+    // 2) 시맨틱 검색 (항상 실행)
+    const semanticResults = await this.semanticSearch(query, topK)
+
+    // 3) 합치기: 키워드 결과 우선, 시맨틱으로 보완 (중복 제거)
+    const seen = new Set<string>()
+    const merged: MedicineResult[] = []
+
+    for (const m of [...keywordResults, ...semanticResults]) {
+      if (!seen.has(m.item_seq)) {
+        seen.add(m.item_seq)
+        merged.push(m)
+      }
+      if (merged.length >= topK) break
     }
 
+    return merged
+  }
+
+  private async keywordSearch(
+    colors: string[],
+    shapes: string[],
+    prints: string[],
+    topK: number,
+  ): Promise<MedicineResult[]> {
+    if (!colors.length && !shapes.length && !prints.length) return []
+
+    let q = this.supabase
+      .from('medicines')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart')
+      .limit(topK)
+
+    if (prints.length) {
+      // 식별문자 OR 조건
+      const printFilter = prints.map((p) => `print_front.ilike.%${p}%,print_back.ilike.%${p}%`).join(',')
+      q = q.or(printFilter)
+    }
+    if (colors.length) {
+      q = q.or(colors.map((c) => `color_class1.ilike.%${c}%,color_class2.ilike.%${c}%`).join(','))
+    }
+    if (shapes.length) {
+      q = q.or(shapes.map((s) => `drug_shape.ilike.%${s}%`).join(','))
+    }
+
+    const { data, error } = await q
+    if (error) {
+      console.error('[RetrievalService] keyword search error:', error.message)
+      return []
+    }
     return (data as MedicineResult[]) ?? []
   }
 
-  /** 검색 결과를 LLM 프롬프트에 주입할 텍스트로 변환 */
+  private async semanticSearch(query: string, topK: number): Promise<MedicineResult[]> {
+    try {
+      const embedding = await this.embeddingService.embed(query)
+      const { data, error } = await this.supabase.rpc('match_medicines', {
+        query_embedding: embedding,
+        match_threshold: 0.3,
+        match_count: topK,
+      })
+      if (error) return []
+      return (data as MedicineResult[]) ?? []
+    } catch {
+      return []
+    }
+  }
+
   formatContext(results: MedicineResult[]): string {
     if (!results.length) return ''
 

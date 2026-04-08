@@ -79,44 +79,28 @@ export class RetrievalService {
     return this._supabase
   }
 
-  /** 하이브리드 검색: 키워드 AND 필터 우선, 시맨틱은 보완용 */
+  /** 하이브리드 검색: 우선순위별 단계적 검색, 상위 단계 결과가 있으면 하위 단계는 섞지 않음 */
   async search(query: string, topK = 5): Promise<MedicineResult[]> {
     const { colors, shapes, prints } = extractKeywords(query)
     const hasAppearanceQuery = colors.length > 0 || shapes.length > 0 || prints.length > 0
 
-    // 1) 약 이름 직접 검색
+    // 1) 약 이름 직접 검색 — 결과 있으면 바로 반환
     const nameResults = await this.nameSearch(query, topK)
+    if (nameResults.length > 0) return nameResults.slice(0, topK)
 
-    // 이름으로 충분히 찾았으면 바로 반환
-    if (nameResults.length >= topK) return nameResults.slice(0, topK)
-
-    // 2) 외관 키워드가 있으면 키워드 AND 검색
-    const keywordResults = hasAppearanceQuery
-      ? await this.keywordSearch(colors, shapes, prints, topK)
-      : []
-
-    // 3) 약효분류 검색
-    const classResults = await this.classSearch(query, topK)
-
-    // 4) 시맨틱 검색 — 외관 키워드가 없거나 결과 부족 시 실행 (동의어 매칭용)
-    const foundSoFar = nameResults.length + keywordResults.length + classResults.length
-    const semanticResults = (!hasAppearanceQuery || foundSoFar < topK)
-      ? await this.semanticSearch(query, topK)
-      : []
-
-    // 5) 합치기: 이름 > 키워드(AND) > 약효분류 > 시맨틱 (중복 제거)
-    const seen = new Set<string>()
-    const merged: MedicineResult[] = []
-
-    for (const m of [...nameResults, ...keywordResults, ...classResults, ...semanticResults]) {
-      if (!seen.has(m.item_seq)) {
-        seen.add(m.item_seq)
-        merged.push(m)
-      }
-      if (merged.length >= topK) break
+    // 2) 외관 키워드 AND 검색 — 결과 있으면 바로 반환
+    if (hasAppearanceQuery) {
+      const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)
+      if (keywordResults.length > 0) return keywordResults.slice(0, topK)
     }
 
-    return merged
+    // 3) 약효분류 + 효능 검색 — 결과 있으면 바로 반환
+    const classResults = await this.classSearch(query, topK)
+    if (classResults.length > 0) return classResults.slice(0, topK)
+
+    // 4) 시맨틱 검색 — 위 결과가 모두 없을 때만
+    const semanticResults = await this.semanticSearch(query, topK)
+    return semanticResults.slice(0, topK)
   }
 
   /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 3자 이상 토큰으로 검색 */

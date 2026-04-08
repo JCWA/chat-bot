@@ -99,7 +99,9 @@ export class BotService {
       history.push({ role: 'assistant', content: botReply })
       this.trimHistory(chatId, history)
 
-      const medicines: MedicineCard[] = searchResults.map((m) => ({
+      // LLM이 "찾지 못했습니다" 류 응답이면 카드 표시 안 함
+      const notFound = botReply.includes('찾지 못했') || botReply.includes('찾을 수 없') || botReply.includes('해당 조건에 맞는 약')
+      const medicines: MedicineCard[] = notFound ? [] : searchResults.map((m) => ({
         item_name: m.item_name,
         entp_name: m.entp_name,
         item_image: m.item_image ?? null,

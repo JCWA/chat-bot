@@ -65,8 +65,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // 봇 응답 생성
     try {
-      const botReply = await this.botService.respond(chatId, message)
-      client.nsp.emit('receiveMessage', { userId: botUserId, message: botReply })
+      const { message: botReply, medicines } = await this.botService.respond(chatId, message)
+      client.nsp.emit('receiveMessage', { userId: botUserId, message: botReply, medicines })
     } catch (error) {
       console.error(`[ChatGateway] 봇 응답 실패:`, error)
       client.emit('receiveMessage', { userId: botUserId, message: '죄송합니다, 잠시 후 다시 시도해 주세요.' })

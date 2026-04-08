@@ -1,9 +1,24 @@
 import { Injectable, Optional } from '@nestjs/common'
-import { RetrievalService } from '../retrieval/retrieval.service'
+import { MedicineResult, RetrievalService } from '../retrieval/retrieval.service'
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
+}
+
+export interface BotResponse {
+  message: string
+  medicines: MedicineCard[]
+}
+
+export interface MedicineCard {
+  item_name: string
+  entp_name: string
+  item_image: string | null
+  drug_shape: string | null
+  color: string | null
+  class_name: string | null
+  efcy: string | null
 }
 
 const SYSTEM_PROMPT = `당신은 약의 외관(모양·색상·제형·분할선·식별문자)으로 약을 찾아주는 의약품 식별 챗봇입니다.
@@ -14,7 +29,7 @@ const SYSTEM_PROMPT = `당신은 약의 외관(모양·색상·제형·분할선
 3. [참고 의약품 정보]에 효능·용법·부작용이 포함되어 있으면 해당 내용을 안내하세요. 정보가 없는 항목은 "해당 정보가 없습니다. 약사 또는 의사에게 문의하세요."라고 답하세요.
 4. [참고 의약품 정보]가 없거나 조건에 맞는 약이 없으면 "해당 조건에 맞는 약을 찾지 못했습니다. 모양·색상·식별문자를 더 자세히 알려주시면 다시 찾아보겠습니다."라고 답하세요.
 5. 반드시 한국어(한글)로만 답변하세요. 한자(漢字), 일본어, 중국어, 베트남어 등 다른 문자를 절대 섞지 마세요. 영어는 약 이름·식별문자 등 고유명사에만 허용합니다.
-6. [참고 의약품 정보]에 이미지 URL이 있으면 답변 마지막에 "![약 이미지](URL)" 형식으로 반드시 포함하세요. 여러 약이면 각각 포함합니다.`
+6. 검색된 약이 여러 개면 각각 간략히 소개하세요. 이미지는 별도로 표시되므로 이미지 URL을 답변에 포함하지 마세요.`
 
 @Injectable()
 export class BotService {
@@ -33,16 +48,17 @@ export class BotService {
     return parseInt(process.env.BOT_CONTEXT_LIMIT ?? '20', 10)
   }
 
-  async respond(chatId: string, userMessage: string): Promise<string> {
+  async respond(chatId: string, userMessage: string): Promise<BotResponse> {
     const history = this.getHistory(chatId)
 
     // RAG: 사용자 메시지로 관련 약 검색
     let systemContent = SYSTEM_PROMPT
+    let searchResults: MedicineResult[] = []
     if (this.retrievalService) {
       try {
-        const results = await this.retrievalService.search(userMessage)
-        if (results.length > 0) {
-          const context = this.retrievalService.formatContext(results)
+        searchResults = await this.retrievalService.search(userMessage)
+        if (searchResults.length > 0) {
+          const context = this.retrievalService.formatContext(searchResults)
           systemContent = `${SYSTEM_PROMPT}\n\n[참고 의약품 정보]\n${context}`
         }
       } catch (err) {
@@ -80,7 +96,17 @@ export class BotService {
       history.push({ role: 'assistant', content: botReply })
       this.trimHistory(chatId, history)
 
-      return botReply
+      const medicines: MedicineCard[] = searchResults.map((m) => ({
+        item_name: m.item_name,
+        entp_name: m.entp_name,
+        item_image: m.item_image ?? null,
+        drug_shape: m.drug_shape ?? null,
+        color: [m.color_class1, m.color_class2].filter(Boolean).join('/') || null,
+        class_name: m.class_name ?? null,
+        efcy: m.efcy ?? null,
+      }))
+
+      return { message: botReply, medicines }
     } catch (error) {
       console.error(`[BotService] Groq API 호출 실패:`, error)
       throw error

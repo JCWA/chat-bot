@@ -79,17 +79,20 @@ export class RetrievalService {
   async search(query: string, topK = 5): Promise<MedicineResult[]> {
     const { colors, shapes, prints } = extractKeywords(query)
 
-    // 1) 키워드 필터 검색
+    // 1) 약 이름 직접 검색
+    const nameResults = await this.nameSearch(query, topK)
+
+    // 2) 키워드 필터 검색 (색상/모양/식별문자)
     const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)
 
-    // 2) 시맨틱 검색 (항상 실행)
+    // 3) 시맨틱 검색
     const semanticResults = await this.semanticSearch(query, topK)
 
-    // 3) 합치기: 키워드 결과 우선, 시맨틱으로 보완 (중복 제거)
+    // 4) 합치기: 이름 검색 > 키워드 > 시맨틱 (중복 제거)
     const seen = new Set<string>()
     const merged: MedicineResult[] = []
 
-    for (const m of [...keywordResults, ...semanticResults]) {
+    for (const m of [...nameResults, ...keywordResults, ...semanticResults]) {
       if (!seen.has(m.item_seq)) {
         seen.add(m.item_seq)
         merged.push(m)
@@ -98,6 +101,23 @@ export class RetrievalService {
     }
 
     return merged
+  }
+
+  /** 약 이름으로 직접 검색 */
+  private async nameSearch(query: string, topK: number): Promise<MedicineResult[]> {
+    // 한글 2자 이상 연속 단어 추출
+    const nameTokens = query.match(/[가-힣]{2,}/g) ?? []
+    if (!nameTokens.length) return []
+
+    const orFilter = nameTokens.map((t) => `item_name.ilike.%${t}%`).join(',')
+    const { data, error } = await this.supabase
+      .from('medicines')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart')
+      .or(orFilter)
+      .limit(topK)
+
+    if (error) return []
+    return (data as MedicineResult[]) ?? []
   }
 
   private async keywordSearch(
@@ -114,7 +134,6 @@ export class RetrievalService {
       .limit(topK)
 
     if (prints.length) {
-      // 식별문자 OR 조건
       const printFilter = prints.map((p) => `print_front.ilike.%${p}%,print_back.ilike.%${p}%`).join(',')
       q = q.or(printFilter)
     }

@@ -6,11 +6,14 @@ interface Message {
   content: string
 }
 
-const SYSTEM_PROMPT = `당신은 의약품 식별 전문 챗봇입니다.
-사용자가 약의 모양, 색상, 제형, 분할선, 식별문자를 설명하면 해당 약을 찾아 안내합니다.
-아래 [참고 의약품 정보]가 제공되면 이를 바탕으로 정확하게 답변하세요.
-정보가 없으면 "해당 조건에 맞는 약을 찾지 못했습니다"라고 안내하세요.
-복약 지도나 처방 관련 조언은 반드시 전문가 상담을 권유하세요.`
+const SYSTEM_PROMPT = `당신은 약의 외관(모양·색상·제형·분할선·식별문자)으로 약을 찾아주는 의약품 식별 챗봇입니다.
+
+[규칙 — 반드시 준수]
+1. 오직 아래 [참고 의약품 정보]에 있는 내용만 답변하세요. 데이터에 없는 내용은 절대 지어내지 마세요. 존재하지 않는 약 이름을 만들어내지 마세요.
+2. 답변 가능한 것: 약 이름, 제조사, 모양, 색상, 제형, 식별문자, 분할선, 성상(chart).
+3. 답변 불가능한 것: 효능, 효과, 부작용, 성분, 적응증, 복용법, 용량. 이런 질문엔 "이 챗봇은 외관 식별 전용입니다. 효능·용법은 약사 또는 의사에게 문의하세요."라고만 답하세요.
+4. [참고 의약품 정보]가 없거나 조건에 맞는 약이 없으면 "해당 조건에 맞는 약을 찾지 못했습니다. 모양·색상·식별문자를 더 자세히 알려주시면 다시 찾아보겠습니다."라고 답하세요.
+5. 반드시 한국어(한글)로만 답변하세요. 한자(漢字), 일본어, 중국어, 베트남어 등 다른 문자를 절대 섞지 마세요. 영어는 약 이름·식별문자 등 고유명사에만 허용합니다.`
 
 @Injectable()
 export class BotService {
@@ -59,7 +62,7 @@ export class BotService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         },
-        body: JSON.stringify({ model: this.model, messages }),
+        body: JSON.stringify({ model: this.model, messages, temperature: 0.3 }),
       })
 
       if (!response.ok) {
@@ -69,7 +72,8 @@ export class BotService {
       const data = (await response.json()) as {
         choices: { message: { content: string } }[]
       }
-      const botReply = data.choices[0]?.message?.content ?? '응답을 생성할 수 없습니다.'
+      const rawReply = data.choices[0]?.message?.content ?? '응답을 생성할 수 없습니다.'
+      const botReply = this.sanitizeResponse(rawReply)
 
       history.push({ role: 'user', content: userMessage })
       history.push({ role: 'assistant', content: botReply })
@@ -87,6 +91,20 @@ export class BotService {
       this.conversations.set(chatId, [])
     }
     return this.conversations.get(chatId)
+  }
+
+  /** 한자·일본어·중국어·베트남어 등 비한글 문자를 한글로 대체 */
+  private sanitizeResponse(text: string): string {
+    // CJK Unified Ideographs (한자)
+    // Hiragana, Katakana (일본어)
+    // CJK Compatibility Ideographs
+    // Vietnamese combining marks that appear in corrupted output
+    return text
+      .replace(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g, '')
+      .replace(/[\u3040-\u309F\u30A0-\u30FF]/g, '')
+      .replace(/[\u0300-\u036F\u1EA0-\u1EF9]/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
   }
 
   private trimHistory(chatId: string, history: Message[]) {

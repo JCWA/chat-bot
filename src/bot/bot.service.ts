@@ -83,6 +83,9 @@ export class BotService {
       })
 
       if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error('RATE_LIMIT')
+        }
         throw new Error(`Groq API error: ${response.status} ${response.statusText}`)
       }
 

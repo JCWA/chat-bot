@@ -67,9 +67,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const { message: botReply, medicines } = await this.botService.respond(chatId, message)
       client.nsp.emit('receiveMessage', { userId: botUserId, message: botReply, medicines })
-    } catch (error) {
+    } catch (error: any) {
       console.error(`[ChatGateway] 봇 응답 실패:`, error)
-      client.emit('receiveMessage', { userId: botUserId, message: '죄송합니다, 잠시 후 다시 시도해 주세요.' })
+      const msg = error?.message === 'RATE_LIMIT'
+        ? '현재 요청이 많아 잠시 후 다시 시도해 주세요. (AI 응답 한도 초과)'
+        : '죄송합니다, 일시적인 오류가 발생했습니다.'
+      client.emit('receiveMessage', { userId: botUserId, message: msg })
     }
   }
 

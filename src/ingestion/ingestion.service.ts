@@ -237,32 +237,28 @@ export class IngestionService {
     return { processed, total: totalCount }
   }
 
-  /** e약은요 API에서 단일 약 정보 조회 */
-  private async fetchDrugInfo(itemSeq: string): Promise<DrugInfoItem | null> {
+  /** e약은요 API 페이지 단위 조회 */
+  private async fetchDrugInfoPage(pageNo: number): Promise<{ items: DrugInfoItem[]; totalCount: number }> {
     const url =
       `${this.drugInfoApiUrl}?serviceKey=${process.env.DATA_GO_KR_API_KEY}` +
-      `&itemSeq=${itemSeq}&type=json`
+      `&pageNo=${pageNo}&numOfRows=${this.PAGE_SIZE}&type=json`
 
-    try {
-      const res = await fetch(url)
-      if (!res.ok) return null
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`DrugInfo API error: ${res.status}`)
 
-      const json = (await res.json()) as { body: DrugInfoResponse['body'] }
-      const rawItems = json.body?.items
-      let items: DrugInfoItem[]
+    const json = (await res.json()) as { body: DrugInfoResponse['body'] }
+    const rawItems = json.body?.items
+    let items: DrugInfoItem[]
 
-      if (Array.isArray(rawItems)) {
-        items = rawItems
-      } else if (rawItems && Array.isArray((rawItems as any).item)) {
-        items = (rawItems as any).item
-      } else {
-        return null
-      }
-
-      return items[0] ?? null
-    } catch {
-      return null
+    if (Array.isArray(rawItems)) {
+      items = rawItems
+    } else if (rawItems && Array.isArray((rawItems as any).item)) {
+      items = (rawItems as any).item
+    } else {
+      items = []
     }
+
+    return { items, totalCount: json.body?.totalCount ?? 0 }
   }
 
   /** HTML 태그 제거 */
@@ -271,51 +267,40 @@ export class IngestionService {
     return text.replace(/<[^>]*>/g, '').trim() || null
   }
 
-  /** e약은요 데이터 수집 — efcy가 없는 약들에 효능/부작용 등 추가 */
+  /** e약은요 데이터 수집 — 페이지 단위로 전체 순회, 이미 수집된 item_seq 스킵 */
   async runDrugInfo(): Promise<{ processed: number; skipped: number; total: number }> {
-    console.log('[DrugInfo] e약은요 수집 시작')
+    console.log('[DrugInfo] e약은요 수집 시작 (페이지 단위)')
 
-    // efcy가 비어있는 item_seq 목록 조회
-    const PAGE = 1000
-    const seqsToFetch: string[] = []
+    // 이미 efcy가 있는 item_seq 조회
+    const existingSeqs = new Set<string>()
     let from = 0
-
     while (true) {
-      const { data, error } = await this.supabase
+      const { data } = await this.supabase
         .from('medicines')
         .select('item_seq')
-        .is('efcy', null)
-        .range(from, from + PAGE - 1)
-
-      if (error) {
-        console.error('[DrugInfo] 조회 실패:', error.message)
-        break
-      }
+        .not('efcy', 'is', null)
+        .range(from, from + 999)
       if (!data || data.length === 0) break
-
-      for (const row of data) seqsToFetch.push(row.item_seq)
-      if (data.length < PAGE) break
-      from += PAGE
+      for (const row of data) existingSeqs.add(row.item_seq)
+      if (data.length < 1000) break
+      from += 1000
     }
+    console.log(`[DrugInfo] 이미 수집된 항목: ${existingSeqs.size}개 (스킵)`)
 
-    const total = seqsToFetch.length
-    console.log(`[DrugInfo] 효능 미수집 항목: ${total}개`)
+    const { items: firstItems, totalCount } = await this.fetchDrugInfoPage(1)
+    const totalPages = Math.ceil(totalCount / this.PAGE_SIZE)
+    console.log(`[DrugInfo] e약은요 전체 ${totalCount}개, ${totalPages}페이지`)
 
     let processed = 0
     let skipped = 0
 
-    for (let i = 0; i < seqsToFetch.length; i += this.DRUG_INFO_BATCH) {
-      const batch = seqsToFetch.slice(i, i + this.DRUG_INFO_BATCH)
-
-      const results = await Promise.all(
-        batch.map(async (seq) => {
-          const info = await this.fetchDrugInfo(seq)
-          return { seq, info }
-        }),
-      )
-
-      for (const { seq, info } of results) {
-        if (!info || !info.efcyQesitm) {
+    const processItems = async (items: DrugInfoItem[]) => {
+      for (const info of items) {
+        if (!info.itemSeq || existingSeqs.has(info.itemSeq)) {
+          skipped++
+          continue
+        }
+        if (!info.efcyQesitm) {
           skipped++
           continue
         }
@@ -330,21 +315,31 @@ export class IngestionService {
             intrc: this.stripHtml(info.intrcQesitm),
             deposit_method: this.stripHtml(info.depositMethodQesitm),
           })
-          .eq('item_seq', seq)
+          .eq('item_seq', info.itemSeq)
 
         if (error) {
-          console.error(`[DrugInfo] 업데이트 실패 (${seq}):`, error.message)
           skipped++
         } else {
           processed++
+          existingSeqs.add(info.itemSeq)
         }
       }
+      console.log(`[DrugInfo] ${processed} 처리 / ${skipped} 스킵 (전체 ${totalCount}개)`)
+    }
 
-      console.log(`[DrugInfo] ${processed} 처리 / ${skipped} 스킵 (전체 ${total}개)`)
-      await new Promise((r) => setTimeout(r, 200))
+    await processItems(firstItems)
+
+    for (let page = 2; page <= totalPages; page++) {
+      try {
+        const { items } = await this.fetchDrugInfoPage(page)
+        await processItems(items)
+      } catch (err) {
+        console.error(`[DrugInfo] 페이지 ${page} 오류:`, err)
+      }
+      await new Promise((r) => setTimeout(r, 300))
     }
 
     console.log(`[DrugInfo] 완료 — ${processed}개 처리, ${skipped}개 스킵`)
-    return { processed, skipped, total }
+    return { processed, skipped, total: totalCount }
   }
 }

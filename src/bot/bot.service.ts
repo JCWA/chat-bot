@@ -45,7 +45,7 @@ export class BotService {
   }
 
   private get contextLimit(): number {
-    return parseInt(process.env.BOT_CONTEXT_LIMIT ?? '20', 10)
+    return parseInt(process.env.BOT_CONTEXT_LIMIT ?? '4', 10)
   }
 
   async respond(chatId: string, userMessage: string): Promise<BotResponse> {

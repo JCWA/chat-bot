@@ -107,16 +107,30 @@ export class RetrievalService {
     return merged
   }
 
-  /** 약 이름으로 직접 검색 */
+  /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 3자 이상 토큰으로 검색 */
   private async nameSearch(query: string, topK: number): Promise<MedicineResult[]> {
-    // 한글 2자 이상 연속 단어 추출
-    const nameTokens = query.match(/[가-힣]{2,}/g) ?? []
+    const select = 'item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name'
+
+    // 1) 전체 쿼리 문자열로 정확 검색
+    const fullQuery = query.replace(/[^가-힣a-zA-Z0-9]/g, '').trim()
+    if (fullQuery.length >= 2) {
+      const { data } = await this.supabase
+        .from('medicines')
+        .select(select)
+        .ilike('item_name', `%${fullQuery}%`)
+        .limit(topK)
+
+      if (data && data.length > 0) return data as MedicineResult[]
+    }
+
+    // 2) 3자 이상 토큰으로 부분 검색 (짧은 토큰은 오매칭 방지)
+    const nameTokens = (query.match(/[가-힣]{3,}/g) ?? [])
     if (!nameTokens.length) return []
 
     const orFilter = nameTokens.map((t) => `item_name.ilike.%${t}%`).join(',')
     const { data, error } = await this.supabase
       .from('medicines')
-      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name')
+      .select(select)
       .or(orFilter)
       .limit(topK)
 
@@ -124,9 +138,9 @@ export class RetrievalService {
     return (data as MedicineResult[]) ?? []
   }
 
-  /** 약효분류명으로 검색 (예: "진통제", "항생제", "소화제") */
+  /** 약효분류명으로 검색 (예: "진통제", "항생제", "소화제") — 3자 이상 토큰만 */
   private async classSearch(query: string, topK: number): Promise<MedicineResult[]> {
-    const tokens = query.match(/[가-힣]{2,}/g) ?? []
+    const tokens = query.match(/[가-힣]{3,}/g) ?? []
     if (!tokens.length) return []
 
     const orFilter = tokens.map((t) => `class_name.ilike.%${t}%`).join(',')
@@ -177,7 +191,7 @@ export class RetrievalService {
       const embedding = await this.embeddingService.embed(query)
       const { data, error } = await this.supabase.rpc('match_medicines', {
         query_embedding: embedding,
-        match_threshold: 0.3,
+        match_threshold: 0.5,
         match_count: topK,
       })
       if (error) return []

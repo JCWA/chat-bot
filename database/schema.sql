@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS medicines (
   form_code_name TEXT,                 -- 제형명
   class_name   TEXT,                   -- 약효분류명
   etc_otc_name TEXT,                   -- 전문/일반
+  efcy         TEXT,                   -- 효능/효과 (e약은요)
+  use_method   TEXT,                   -- 용법/용량 (e약은요)
+  side_effect  TEXT,                   -- 부작용 (e약은요)
+  atpn         TEXT,                   -- 주의사항 (e약은요)
+  intrc        TEXT,                   -- 약물 상호작용 (e약은요)
+  deposit_method TEXT,                 -- 보관법 (e약은요)
   embedding    vector(384),            -- paraphrase-multilingual-MiniLM-L12-v2
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );

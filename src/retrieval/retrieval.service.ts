@@ -103,18 +103,33 @@ export class RetrievalService {
     return semanticResults.slice(0, topK)
   }
 
-  // 검색 쿼리에서 제거할 불용어
-  private static readonly STOP_WORDS = new Set([
-    '찾아봐', '찾아줘', '알려줘', '알려봐', '검색', '검색해', '어떤약', '무슨약',
-    '있어', '없어', '인가요', '인가', '뭐야', '뭐에요', '어때', '어떤',
-    '좀', '해줘', '해봐', '보여줘', '알고싶어', '궁금해',
-  ])
+  // 검색 쿼리에서 제거할 불용어 패턴 (어간 기반)
+  private static readonly STOP_PATTERNS = [
+    /찾아[보봐줘주]?\S*/g,
+    /알려[줘주봐]?\S*/g,
+    /검색\S*/g,
+    /보여[줘주]?\S*/g,
+    /알고\s?싶\S*/g,
+    /궁금\S*/g,
+    /어떤\S*/g,
+    /무슨\S*/g,
+    /어떻게\S*/g,
+    /뭐[야에예]?\S*/g,
+    /인가[요]?\S*/g,
+    /있[어나는을]?\S*/g,
+    /없[어나는을]?\S*/g,
+    /[해하]?[줘주봐]?\S*/g.source ? null : null, // 너무 넓으면 제외
+    /해[줘주봐]\S*/g,
+    /\s좀\s/g,
+  ].filter(Boolean) as RegExp[]
 
-  /** 쿼리에서 불용어 제거 */
+  /** 쿼리에서 불용어 패턴 제거 */
   private cleanQuery(query: string): string {
-    return query.replace(/[가-힣]+/g, (match) =>
-      RetrievalService.STOP_WORDS.has(match) ? '' : match,
-    ).replace(/\s+/g, ' ').trim()
+    let cleaned = query
+    for (const pattern of RetrievalService.STOP_PATTERNS) {
+      cleaned = cleaned.replace(pattern, '')
+    }
+    return cleaned.replace(/\s+/g, ' ').trim()
   }
 
   /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 토큰으로 검색 */
@@ -154,7 +169,7 @@ export class RetrievalService {
     const cleaned = this.cleanQuery(query)
     const tokens = cleaned.match(/[가-힣]{2,}/g) ?? []
     // 색상/모양 키워드 및 불용어 제외
-    const excluded = new Set([...Object.keys(COLOR_MAP), ...Object.keys(SHAPE_MAP), ...RetrievalService.STOP_WORDS])
+    const excluded = new Set([...Object.keys(COLOR_MAP), ...Object.keys(SHAPE_MAP)])
     const filtered = tokens.filter((t) => !excluded.has(t) && t.length >= 2)
     if (!filtered.length) return []
 

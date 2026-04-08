@@ -15,6 +15,7 @@ export interface MedicineResult {
   form_code_name: string
   entp_name: string
   chart: string
+  class_name?: string
   similarity?: number
 }
 
@@ -82,17 +83,20 @@ export class RetrievalService {
     // 1) 약 이름 직접 검색
     const nameResults = await this.nameSearch(query, topK)
 
-    // 2) 키워드 필터 검색 (색상/모양/식별문자)
+    // 2) 약효분류 검색
+    const classResults = await this.classSearch(query, topK)
+
+    // 3) 키워드 필터 검색 (색상/모양/식별문자)
     const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)
 
-    // 3) 시맨틱 검색
+    // 4) 시맨틱 검색
     const semanticResults = await this.semanticSearch(query, topK)
 
-    // 4) 합치기: 이름 검색 > 키워드 > 시맨틱 (중복 제거)
+    // 5) 합치기: 이름 > 약효분류 > 키워드 > 시맨틱 (중복 제거)
     const seen = new Set<string>()
     const merged: MedicineResult[] = []
 
-    for (const m of [...nameResults, ...keywordResults, ...semanticResults]) {
+    for (const m of [...nameResults, ...classResults, ...keywordResults, ...semanticResults]) {
       if (!seen.has(m.item_seq)) {
         seen.add(m.item_seq)
         merged.push(m)
@@ -112,7 +116,23 @@ export class RetrievalService {
     const orFilter = nameTokens.map((t) => `item_name.ilike.%${t}%`).join(',')
     const { data, error } = await this.supabase
       .from('medicines')
-      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name')
+      .or(orFilter)
+      .limit(topK)
+
+    if (error) return []
+    return (data as MedicineResult[]) ?? []
+  }
+
+  /** 약효분류명으로 검색 (예: "진통제", "항생제", "소화제") */
+  private async classSearch(query: string, topK: number): Promise<MedicineResult[]> {
+    const tokens = query.match(/[가-힣]{2,}/g) ?? []
+    if (!tokens.length) return []
+
+    const orFilter = tokens.map((t) => `class_name.ilike.%${t}%`).join(',')
+    const { data, error } = await this.supabase
+      .from('medicines')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name')
       .or(orFilter)
       .limit(topK)
 
@@ -130,7 +150,7 @@ export class RetrievalService {
 
     let q = this.supabase
       .from('medicines')
-      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart')
+      .select('item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name')
       .limit(topK)
 
     if (prints.length) {
@@ -183,6 +203,7 @@ export class RetrievalService {
             `식별문자: 앞(${m.print_front ?? '-'}) 뒤(${m.print_back ?? '-'})`,
           (m.line_front || m.line_back) &&
             `분할선: 앞(${m.line_front ?? '-'}) 뒤(${m.line_back ?? '-'})`,
+          m.class_name && `약효분류: ${m.class_name}`,
           m.chart && `성상: ${m.chart}`,
         ]
           .filter(Boolean)

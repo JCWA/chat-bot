@@ -103,12 +103,27 @@ export class RetrievalService {
     return semanticResults.slice(0, topK)
   }
 
-  /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 3자 이상 토큰으로 검색 */
+  // 검색 쿼리에서 제거할 불용어
+  private static readonly STOP_WORDS = new Set([
+    '찾아봐', '찾아줘', '알려줘', '알려봐', '검색', '검색해', '어떤약', '무슨약',
+    '있어', '없어', '인가요', '인가', '뭐야', '뭐에요', '어때', '어떤',
+    '좀', '해줘', '해봐', '보여줘', '알고싶어', '궁금해',
+  ])
+
+  /** 쿼리에서 불용어 제거 */
+  private cleanQuery(query: string): string {
+    return query.replace(/[가-힣]+/g, (match) =>
+      RetrievalService.STOP_WORDS.has(match) ? '' : match,
+    ).replace(/\s+/g, ' ').trim()
+  }
+
+  /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 토큰으로 검색 */
   private async nameSearch(query: string, topK: number): Promise<MedicineResult[]> {
     const select = 'item_seq,item_name,drug_shape,color_class1,color_class2,print_front,print_back,line_front,line_back,form_code_name,entp_name,chart,class_name,item_image,efcy,use_method,side_effect'
+    const cleaned = this.cleanQuery(query)
 
-    // 1) 전체 쿼리 문자열로 정확 검색
-    const fullQuery = query.replace(/[^가-힣a-zA-Z0-9]/g, '').trim()
+    // 1) 정리된 쿼리로 정확 검색
+    const fullQuery = cleaned.replace(/[^가-힣a-zA-Z0-9\-]/g, '').trim()
     if (fullQuery.length >= 2) {
       const { data } = await this.supabase
         .from('medicines')
@@ -119,8 +134,8 @@ export class RetrievalService {
       if (data && data.length > 0) return data as MedicineResult[]
     }
 
-    // 2) 3자 이상 토큰으로 부분 검색 (짧은 토큰은 오매칭 방지)
-    const nameTokens = (query.match(/[가-힣]{3,}/g) ?? [])
+    // 2) 4자 이상 토큰으로 부분 검색 (짧은 토큰 오매칭 방지)
+    const nameTokens = cleaned.match(/[가-힣]{4,}/g) ?? []
     if (!nameTokens.length) return []
 
     const orFilter = nameTokens.map((t) => `item_name.ilike.%${t}%`).join(',')
@@ -134,11 +149,12 @@ export class RetrievalService {
     return (data as MedicineResult[]) ?? []
   }
 
-  /** 약효분류 + 효능 검색 (예: "진통제", "수면", "소화제") — 3자 이상 토큰만 */
+  /** 약효분류 + 효능 검색 (예: "진통제", "수면", "소화제") */
   private async classSearch(query: string, topK: number): Promise<MedicineResult[]> {
-    const tokens = query.match(/[가-힣]{2,}/g) ?? []
-    // 색상/모양 키워드 제외
-    const excluded = new Set([...Object.keys(COLOR_MAP), ...Object.keys(SHAPE_MAP)])
+    const cleaned = this.cleanQuery(query)
+    const tokens = cleaned.match(/[가-힣]{2,}/g) ?? []
+    // 색상/모양 키워드 및 불용어 제외
+    const excluded = new Set([...Object.keys(COLOR_MAP), ...Object.keys(SHAPE_MAP), ...RetrievalService.STOP_WORDS])
     const filtered = tokens.filter((t) => !excluded.has(t) && t.length >= 2)
     if (!filtered.length) return []
 

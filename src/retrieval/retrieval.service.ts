@@ -20,13 +20,18 @@ export interface MedicineResult {
 
 @Injectable()
 export class RetrievalService {
-  private readonly supabase: SupabaseClient
+  private _supabase: SupabaseClient | null = null
 
-  constructor(private readonly embeddingService: EmbeddingService) {
-    this.supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY,
-    )
+  constructor(private readonly embeddingService: EmbeddingService) {}
+
+  private get supabase(): SupabaseClient {
+    if (!this._supabase) {
+      const url = process.env.SUPABASE_URL
+      const key = process.env.SUPABASE_SERVICE_KEY
+      if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_KEY 환경 변수가 설정되지 않았습니다.')
+      this._supabase = createClient(url, key)
+    }
+    return this._supabase
   }
 
   async search(query: string, topK = 5): Promise<MedicineResult[]> {

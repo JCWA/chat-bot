@@ -39,13 +39,18 @@ export class IngestionService {
     'https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03'
   private readonly BATCH_SIZE = 10  // HF API 배치 크기
   private readonly PAGE_SIZE = 100  // API 한 번에 가져올 수량
-  private readonly supabase: SupabaseClient
+  private _supabase: SupabaseClient | null = null
 
-  constructor(private readonly embeddingService: EmbeddingService) {
-    this.supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY,
-    )
+  constructor(private readonly embeddingService: EmbeddingService) {}
+
+  private get supabase(): SupabaseClient {
+    if (!this._supabase) {
+      const url = process.env.SUPABASE_URL
+      const key = process.env.SUPABASE_SERVICE_KEY
+      if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_KEY 환경 변수가 설정되지 않았습니다.')
+      this._supabase = createClient(url, key)
+    }
+    return this._supabase
   }
 
   /** 약 정보를 임베딩용 텍스트로 변환 */

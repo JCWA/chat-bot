@@ -108,7 +108,18 @@
 
 ---
 
+## Phase 13: 보안/안정성 개선
+
+- [x] **TASK-44** 대화 메모리 TTL 30분 + 5분 주기 만료 정리
+- [x] **TASK-45** Groq API 30초 타임아웃 (AbortController)
+- [x] **TASK-46** 메시지 길이 500자 제한
+- [x] **TASK-47** CORS 허용 도메인 제한 (Vercel + localhost)
+- [x] **TASK-48** Socket transport websocket 우선
+- [x] **TASK-49** 이미지 로드 실패 시 숨김 처리
+
+---
+
 ## 현재 상태
 
 **모든 태스크 완료**
-**마지막 완료 태스크**: TASK-43
+**마지막 완료 태스크**: TASK-49

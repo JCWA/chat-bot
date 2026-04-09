@@ -66,6 +66,8 @@ function extractKeywords(query: string): { colors: string[]; shapes: string[]; p
 @Injectable()
 export class RetrievalService {
   private _supabase: SupabaseClient | null = null
+  private readonly searchCache = new Map<string, { results: MedicineResult[]; expires: number }>()
+  private readonly CACHE_TTL = 5 * 60 * 1000 // 5분
 
   constructor(private readonly embeddingService: EmbeddingService) {}
 
@@ -81,26 +83,36 @@ export class RetrievalService {
 
   /** 하이브리드 검색: 우선순위별 단계적 검색, 상위 단계 결과가 있으면 하위 단계는 섞지 않음 */
   async search(query: string, topK = 3): Promise<MedicineResult[]> {
+    // 캐시 확인
+    const cacheKey = `${query}:${topK}`
+    const cached = this.searchCache.get(cacheKey)
+    if (cached && cached.expires > Date.now()) return cached.results
+
     const { colors, shapes, prints } = extractKeywords(query)
     const hasAppearanceQuery = colors.length > 0 || shapes.length > 0 || prints.length > 0
 
     // 1) 약 이름 직접 검색 — 결과 있으면 바로 반환
     const nameResults = await this.nameSearch(query, topK)
-    if (nameResults.length > 0) return nameResults.slice(0, topK)
+    if (nameResults.length > 0) return this.cacheAndReturn(cacheKey, nameResults.slice(0, topK))
 
     // 2) 외관 키워드 AND 검색 — 결과 있으면 바로 반환
     if (hasAppearanceQuery) {
       const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)
-      if (keywordResults.length > 0) return keywordResults.slice(0, topK)
+      if (keywordResults.length > 0) return this.cacheAndReturn(cacheKey, keywordResults.slice(0, topK))
     }
 
     // 3) 약효분류 + 효능 검색 — 결과 있으면 바로 반환
     const classResults = await this.classSearch(query, topK)
-    if (classResults.length > 0) return classResults.slice(0, topK)
+    if (classResults.length > 0) return this.cacheAndReturn(cacheKey, classResults.slice(0, topK))
 
     // 4) 시맨틱 검색 — 위 결과가 모두 없을 때만
     const semanticResults = await this.semanticSearch(query, topK)
-    return semanticResults.slice(0, topK)
+    return this.cacheAndReturn(cacheKey, semanticResults.slice(0, topK))
+  }
+
+  private cacheAndReturn(key: string, results: MedicineResult[]): MedicineResult[] {
+    this.searchCache.set(key, { results, expires: Date.now() + this.CACHE_TTL })
+    return results
   }
 
   // 검색 쿼리에서 제거할 불용어 패턴 (어간 기반)

@@ -104,13 +104,11 @@
 ## Phase 12: 부가 기능
 
 - [x] **TASK-42** 방문자 Slack 알림 (IP + 리퍼러 + 시간)
-- [x] **TASK-43** 포트폴리오에 사이드 프로젝트 섹션 추가
-- [x] **TASK-44** 포트폴리오에 데이터 수집 파이프라인 feature 추가
-- [x] **TASK-45** CONTEXT.md, TASKS.md, CLAUDE.md 최신화
+- [x] **TASK-43** CONTEXT.md, TASKS.md, CLAUDE.md 최신화
 
 ---
 
 ## 현재 상태
 
 **모든 태스크 완료**
-**마지막 완료 태스크**: TASK-45
+**마지막 완료 태스크**: TASK-43

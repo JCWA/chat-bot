@@ -5,9 +5,18 @@ import { AppModule } from './app.module'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
 
+  const allowedOrigins = [
+    'https://chat-bot-web.vercel.app',
+    'http://localhost:3001',
+    'http://localhost:3000',
+  ]
   app.enableCors({
     origin: (origin, callback) => {
-      callback(null, true)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true)
+      } else {
+        callback(null, false)
+      }
     },
     credentials: true,
   })

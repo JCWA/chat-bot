@@ -57,41 +57,60 @@
 - [x] **TASK-18** 검색 오매칭 수정 (토큰 최소 길이, threshold 상향)
 - [x] **TASK-19** 임베딩 중단/재개 지원 (getExistingSeqs, 스킵 로직)
 - [x] **TASK-20** search_by_appearance RPC — 색상+모양+식별문자 AND 검색
+- [x] **TASK-21** 불용어 어간 기반 정규식 패턴 제거
+- [x] **TASK-22** 검색 결과 혼합 방지 (단계별 독립 반환)
+- [x] **TASK-23** 없는 결과일 때 카드 미표시
 
 ---
 
 ## Phase 8: e약은요 연동
 
-- [x] **TASK-21** DB 스키마에 efcy, use_method, side_effect 등 6개 컬럼 추가
-- [x] **TASK-22** ingestion.service.ts — runDrugInfo() e약은요 수집
-- [x] **TASK-23** classSearch에 efcy 컬럼 검색 추가
-- [x] **TASK-24** 시스템 프롬프트에 효능/용법/부작용 답변 허용
-- [x] **TASK-25** match_medicines RPC에 efcy, use_method, side_effect, item_image 추가
+- [x] **TASK-24** DB 스키마에 efcy, use_method, side_effect 등 6개 컬럼 추가
+- [x] **TASK-25** ingestion.service.ts — runDrugInfo() e약은요 페이지 단위 수집
+- [x] **TASK-26** classSearch에 efcy 컬럼 검색 추가
+- [x] **TASK-27** 시스템 프롬프트에 효능/용법/부작용 답변 허용
+- [x] **TASK-28** match_medicines RPC에 efcy, use_method, side_effect, item_image 추가
 
 ---
 
 ## Phase 9: 프론트 개선
 
-- [x] **TASK-26** SEO — 메타태그, OG, robots.txt, sitemap.xml, lang="ko"
-- [x] **TASK-27** 반응형 — 모바일 breakpoint, 시맨틱 HTML, 접근성
-- [x] **TASK-28** 사용법 안내 화면 + 예시 질문 버튼
-- [x] **TASK-29** 약 카드 UI (이미지 + 정보) — WebSocket으로 medicines 전달
-- [x] **TASK-30** 카드 클릭 시 해당 약 상세 검색
+- [x] **TASK-29** SEO — 메타태그, OG, robots.txt, sitemap.xml, lang="ko"
+- [x] **TASK-30** 반응형 — 모바일 breakpoint, 시맨틱 HTML, 접근성
+- [x] **TASK-31** 사용법 안내 화면 + 예시 질문 버튼
+- [x] **TASK-32** 약 카드 UI (이미지 + 정보) — WebSocket으로 medicines 전달
+- [x] **TASK-33** 카드 클릭 시 해당 약 상세 검색
+- [x] **TASK-34** 모바일 카드 가로 스크롤 (overflow-hidden wrapper)
+- [x] **TASK-35** LLM 레이트 리밋 시 구분된 에러 메시지
 
 ---
 
-## Phase 10: 미완료
+## Phase 10: 성능 최적화
 
-- [ ] **TASK-31** search_by_appearance RPC 정확도 추가 개선 (1~2자 식별문자 정확 매칭 검증)
-- [ ] **TASK-32** Groq 레이트 리밋 대응 (재시도 로직 또는 모델 변경)
-- [ ] **TASK-33** CONTEXT.md, TASKS.md, CLAUDE.md 최신화 → 완료
-- [ ] **TASK-34** Railway 백엔드 배포
-- [ ] **TASK-35** Vercel 프론트 배포 연동 확인
-- [ ] **TASK-36** E2E 연결 테스트
+- [x] **TASK-36** LLM 모델 변경 (llama-3.3-70b → llama-3.1-8b-instant)
+- [x] **TASK-37** RAG 컨텍스트 축소 (5건→3건, 텍스트 길이 제한)
+- [x] **TASK-38** 대화 히스토리 20개 → 4개 축소
+
+---
+
+## Phase 11: 배포
+
+- [x] **TASK-39** Railway 백엔드 배포
+- [x] **TASK-40** Vercel 프론트 배포
+- [x] **TASK-41** E2E 연결 테스트
+
+---
+
+## Phase 12: 부가 기능
+
+- [x] **TASK-42** 방문자 Slack 알림 (IP + 리퍼러 + 시간)
+- [x] **TASK-43** 포트폴리오에 사이드 프로젝트 섹션 추가
+- [x] **TASK-44** 포트폴리오에 데이터 수집 파이프라인 feature 추가
+- [x] **TASK-45** CONTEXT.md, TASKS.md, CLAUDE.md 최신화
 
 ---
 
 ## 현재 상태
 
-**마지막 완료 태스크**: TASK-33 (md 파일 최신화)
-**다음 실행할 태스크**: TASK-31 (검색 정확도 추가 개선)
+**모든 태스크 완료**
+**마지막 완료 태스크**: TASK-45

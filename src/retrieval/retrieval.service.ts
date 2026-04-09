@@ -69,7 +69,16 @@ export class RetrievalService {
   private readonly searchCache = new Map<string, { results: MedicineResult[]; expires: number }>()
   private readonly CACHE_TTL = 5 * 60 * 1000 // 5분
 
-  constructor(private readonly embeddingService: EmbeddingService) {}
+  constructor(private readonly embeddingService: EmbeddingService) {
+    setInterval(() => this.cleanupCache(), 5 * 60 * 1000)
+  }
+
+  private cleanupCache() {
+    const now = Date.now()
+    for (const [key, value] of this.searchCache) {
+      if (value.expires <= now) this.searchCache.delete(key)
+    }
+  }
 
   private get supabase(): SupabaseClient {
     if (!this._supabase) {

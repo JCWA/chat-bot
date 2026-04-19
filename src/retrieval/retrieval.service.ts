@@ -97,11 +97,19 @@ export class RetrievalService {
     const { colors, shapes, prints } = extractKeywords(query)
     const hasAppearanceQuery = colors.length > 0 || shapes.length > 0 || prints.length > 0
 
-    // name + class 병합: nameSearch 가 brand 단 1건만 잡았는데 사실 사용자는 카테고리를 원했을 수 있음
-    // (예: '알레르기 약' → name shrink 로 알레르텍 1건 매치 + class/efcy 로 다른 항히스타민 4건).
-    // name 이 topK 이상이면 그걸로 충분하다고 보고 class 스킵.
+    // nameSearch → 전체 쿼리 literal 이 item_name 에 포함된 "exact" 결과가 하나라도 있으면 이미 신호 강함.
+    // 머지 없이 name 만 반환. (써스펜 8시간 → '써스펜8시간' literal 매치 → trust)
+    // exact 매치 없는데(shrink 로 brand family 잡음) topK 미만이면 classSearch 머지로 카테고리 보완.
+    // (알레르기 약 → '알레르기약' literal 아니라 '알레르' 로 shrink → 알레르텍 + 항히스타민 merge)
+    const fullQuery = query.replace(/[^가-힣a-zA-Z0-9\-]/g, '').trim()
     const nameResults = await this.nameSearch(query, topK)
-    if (nameResults.length >= topK) return this.cacheAndReturn(cacheKey, nameResults.slice(0, topK))
+    const hasExactNameHit = fullQuery.length >= 2 && nameResults.some((r) => {
+      const n = (r as unknown as { item_name?: string }).item_name ?? ''
+      return n.includes(fullQuery)
+    })
+    if (hasExactNameHit || nameResults.length >= topK) {
+      return this.cacheAndReturn(cacheKey, nameResults.slice(0, topK))
+    }
 
     if (hasAppearanceQuery) {
       const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)

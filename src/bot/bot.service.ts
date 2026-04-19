@@ -120,9 +120,10 @@ export class BotService {
       history.push({ role: 'assistant', content: botReply })
       this.trimHistory(chatId, history)
 
-      // LLM이 "찾지 못했습니다" 류 응답이면 카드 표시 안 함
-      const notFound = botReply.includes('찾지 못했') || botReply.includes('찾을 수 없') || botReply.includes('해당 조건에 맞는 약')
-      const medicines: MedicineCard[] = notFound ? [] : searchResults.map((m) => ({
+      // 카드는 retrieval 결과를 그대로 반영. LLM 내러티브가 "찾지 못했다"며 투정해도
+      // retrieval 이 실제로 가져온 약이 있으면 사용자에겐 그걸 보여주는 게 정확함.
+      // (8b-instant 가 context 무시하고 더 많은 정보 요청하는 케이스 대응)
+      const medicines: MedicineCard[] = searchResults.map((m) => ({
         item_name: m.item_name,
         entp_name: m.entp_name,
         item_image: m.item_image ?? null,

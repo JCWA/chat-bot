@@ -132,8 +132,6 @@ export class RetrievalService {
     /있[어나는을]?\S*/g,
     /없[어나는을]?\S*/g,
     /해[줘주봐]\S*/g,
-    /추천\S*/g,
-    /종류\S*/g,
     /\s좀\s/g,
   ]
 
@@ -181,8 +179,10 @@ export class RetrievalService {
     const cleaned = this.cleanQuery(query)
     const rawTokens = cleaned.match(/[가-힣]{2,}/g) ?? []
     const excluded = new Set([...Object.keys(COLOR_MAP), ...Object.keys(SHAPE_MAP)])
-    // '감기약' → '감기' 처럼 '~약' 접미어 stem 도 함께 검색. class_name/efcy 는 본문이라 어간 매칭이 실효적.
-    const expanded = rawTokens.flatMap((t) => (t.endsWith('약') && t.length >= 3 ? [t, t.slice(0, -1)] : [t]))
+    // class_name/efcy 는 서술형 본문이라 사용자 입력 어미가 그대로 안 붙음.
+    // 3자+ 토큰은 뒤 한 자 떼어낸 substring 도 함께 검색해 접미어(약/제/류/...)까지 흡수.
+    // 예) '감기약' → {감기약, 감기}, '수면제' → {수면제, 수면}.
+    const expanded = rawTokens.flatMap((t) => (t.length >= 3 ? [t, t.slice(0, -1)] : [t]))
     const filtered = [...new Set(expanded)].filter((t) => !excluded.has(t) && t.length >= 2)
     if (!filtered.length) return []
 

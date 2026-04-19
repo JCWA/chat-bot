@@ -97,8 +97,11 @@ export class RetrievalService {
     const { colors, shapes, prints } = extractKeywords(query)
     const hasAppearanceQuery = colors.length > 0 || shapes.length > 0 || prints.length > 0
 
+    // name + class 병합: nameSearch 가 brand 단 1건만 잡았는데 사실 사용자는 카테고리를 원했을 수 있음
+    // (예: '알레르기 약' → name shrink 로 알레르텍 1건 매치 + class/efcy 로 다른 항히스타민 4건).
+    // name 이 topK 이상이면 그걸로 충분하다고 보고 class 스킵.
     const nameResults = await this.nameSearch(query, topK)
-    if (nameResults.length > 0) return this.cacheAndReturn(cacheKey, nameResults.slice(0, topK))
+    if (nameResults.length >= topK) return this.cacheAndReturn(cacheKey, nameResults.slice(0, topK))
 
     if (hasAppearanceQuery) {
       const keywordResults = await this.keywordSearch(colors, shapes, prints, topK)
@@ -106,7 +109,12 @@ export class RetrievalService {
     }
 
     const classResults = await this.classSearch(query, topK)
-    if (classResults.length > 0) return this.cacheAndReturn(cacheKey, classResults.slice(0, topK))
+    if (nameResults.length > 0 || classResults.length > 0) {
+      const seen = new Set<string>(nameResults.map((r) => (r as unknown as { item_seq: string }).item_seq))
+      const extra = classResults.filter((r) => !seen.has((r as unknown as { item_seq: string }).item_seq))
+      const merged = [...nameResults, ...extra].slice(0, topK)
+      return this.cacheAndReturn(cacheKey, merged)
+    }
 
     const semanticResults = await this.semanticSearch(query, topK)
     return this.cacheAndReturn(cacheKey, semanticResults.slice(0, topK))

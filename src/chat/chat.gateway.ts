@@ -16,6 +16,7 @@ import { BotService } from '../bot/bot.service'
   namespace: /^\/chat\/\d+$/,
   cors: {
     origin: [
+      'https://medi.channy.dev',
       'https://chat-bot-web.vercel.app',
       'http://localhost:3001',
       'http://localhost:3000',

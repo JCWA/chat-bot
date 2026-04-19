@@ -132,6 +132,8 @@ export class RetrievalService {
     /있[어나는을]?\S*/g,
     /없[어나는을]?\S*/g,
     /해[줘주봐]\S*/g,
+    /추천\S*/g,
+    /종류\S*/g,
     /\s좀\s/g,
   ]
 
@@ -177,9 +179,11 @@ export class RetrievalService {
   /** 약효분류 + 효능 검색 */
   private async classSearch(query: string, topK: number): Promise<MedicineResult[]> {
     const cleaned = this.cleanQuery(query)
-    const tokens = cleaned.match(/[가-힣]{2,}/g) ?? []
+    const rawTokens = cleaned.match(/[가-힣]{2,}/g) ?? []
     const excluded = new Set([...Object.keys(COLOR_MAP), ...Object.keys(SHAPE_MAP)])
-    const filtered = tokens.filter((t) => !excluded.has(t) && t.length >= 2)
+    // '감기약' → '감기' 처럼 '~약' 접미어 stem 도 함께 검색. class_name/efcy 는 본문이라 어간 매칭이 실효적.
+    const expanded = rawTokens.flatMap((t) => (t.endsWith('약') && t.length >= 3 ? [t, t.slice(0, -1)] : [t]))
+    const filtered = [...new Set(expanded)].filter((t) => !excluded.has(t) && t.length >= 2)
     if (!filtered.length) return []
 
     const qb = this.repo.createQueryBuilder('m').select(SELECT_COLS.split(',').map((c) => `m.${c.trim()}`))

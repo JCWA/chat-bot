@@ -143,19 +143,25 @@ export class RetrievalService {
     return cleaned.replace(/\s+/g, ' ').trim()
   }
 
-  /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 없으면 토큰으로 검색 */
+  /** 약 이름으로 직접 검색 — 전체 쿼리로 먼저 검색, 0 매치면 뒤에서부터 한 자씩 줄여 재시도, 여전히 실패 시 토큰으로 */
   private async nameSearch(query: string, topK: number): Promise<MedicineResult[]> {
     const cleaned = this.cleanQuery(query)
 
     const fullQuery = cleaned.replace(/[^가-힣a-zA-Z0-9\-]/g, '').trim()
     if (fullQuery.length >= 2) {
-      const rows = await this.repo
-        .createQueryBuilder('m')
-        .select(SELECT_COLS.split(',').map((c) => `m.${c.trim()}`))
-        .where('m.item_name ILIKE :q', { q: `%${fullQuery}%` })
-        .limit(topK)
-        .getMany()
-      if (rows.length > 0) return rows as unknown as MedicineResult[]
+      // 예) '판콜에스' (DB 에 '판콜에이', '판콜비타' 만 있음) → '판콜에' 0 → '판콜' 2건 매치.
+      // 공통 접두어가 상품명 패밀리를 잡아주므로 semantic fallback(외관 기반) 으로 가기 전 한 번 더 시도.
+      const minLen = Math.max(2, Math.floor(fullQuery.length / 2))
+      for (let len = fullQuery.length; len >= minLen; len--) {
+        const substr = fullQuery.slice(0, len)
+        const rows = await this.repo
+          .createQueryBuilder('m')
+          .select(SELECT_COLS.split(',').map((c) => `m.${c.trim()}`))
+          .where('m.item_name ILIKE :q', { q: `%${substr}%` })
+          .limit(topK)
+          .getMany()
+        if (rows.length > 0) return rows as unknown as MedicineResult[]
+      }
     }
 
     const nameTokens = cleaned.match(/[가-힣]{4,}/g) ?? []

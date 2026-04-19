@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Repository } from 'typeorm'
 import { EmbeddingService } from '../embedding/embedding.service'
+import { Medicine } from '../medicine/medicine.entity'
 
 interface MedicineItem {
   ITEM_SEQ: string
@@ -55,30 +57,28 @@ interface DrugInfoResponse {
   }
 }
 
+const UPSERT_COLS = [
+  'item_seq', 'item_name', 'entp_name', 'chart', 'item_image', 'print_front',
+  'print_back', 'drug_shape', 'color_class1', 'color_class2', 'line_front',
+  'line_back', 'leng_long', 'leng_short', 'thick', 'form_code_name',
+  'class_name', 'etc_otc_name',
+] as const
+
 @Injectable()
 export class IngestionService {
   private readonly apiUrl =
     'https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/getMdcinGrnIdntfcInfoList03'
   private readonly drugInfoApiUrl =
     'https://apis.data.go.kr/1471000/DrbEasyDrugInfoService/getDrbEasyDrugList'
-  private readonly BATCH_SIZE = 32  // HF API 배치 크기
-  private readonly PAGE_SIZE = 100  // API 한 번에 가져올 수량
-  private readonly DRUG_INFO_BATCH = 50  // e약은요 API 배치 크기
-  private _supabase: SupabaseClient | null = null
+  private readonly BATCH_SIZE = 32
+  private readonly PAGE_SIZE = 100
 
-  constructor(private readonly embeddingService: EmbeddingService) {}
+  constructor(
+    @InjectRepository(Medicine)
+    private readonly repo: Repository<Medicine>,
+    private readonly embeddingService: EmbeddingService,
+  ) {}
 
-  private get supabase(): SupabaseClient {
-    if (!this._supabase) {
-      const url = process.env.SUPABASE_URL
-      const key = process.env.SUPABASE_SERVICE_KEY
-      if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_KEY 환경 변수가 설정되지 않았습니다.')
-      this._supabase = createClient(url, key)
-    }
-    return this._supabase
-  }
-
-  /** 약 정보를 임베딩용 텍스트로 변환 */
   private toEmbedText(item: MedicineItem): string {
     return [
       item.ITEM_NAME && `약품명: ${item.ITEM_NAME}`,
@@ -97,7 +97,6 @@ export class IngestionService {
   }
 
   private async fetchPage(pageNo: number): Promise<{ items: MedicineItem[]; totalCount: number }> {
-    // 키는 이미 URL 인코딩된 상태로 .env에 저장 — 그대로 사용
     const url =
       `${this.apiUrl}?serviceKey=${process.env.DATA_GO_KR_API_KEY}` +
       `&pageNo=${pageNo}&numOfRows=${this.PAGE_SIZE}&type=json`
@@ -121,69 +120,52 @@ export class IngestionService {
     return { items, totalCount: body.totalCount }
   }
 
+  /** 배치 upsert: item_seq 충돌 시 갱신 */
   private async upsertBatch(items: MedicineItem[], embeddings: number[][]): Promise<void> {
-    const rowMap = new Map<string, Record<string, unknown>>()
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      rowMap.set(item.ITEM_SEQ, {
-        item_seq: item.ITEM_SEQ,
-        item_name: item.ITEM_NAME,
-        entp_name: item.ENTP_NAME,
-        chart: item.CHART,
-        item_image: item.ITEM_IMAGE,
-        print_front: item.PRINT_FRONT,
-        print_back: item.PRINT_BACK,
-        drug_shape: item.DRUG_SHAPE,
-        color_class1: item.COLOR_CLASS1,
-        color_class2: item.COLOR_CLASS2,
-        line_front: item.LINE_FRONT,
-        line_back: item.LINE_BACK,
-        leng_long: item.LENG_LONG,
-        leng_short: item.LENG_SHORT,
-        thick: item.THICK,
-        form_code_name: item.FORM_CODE_NAME,
-        class_name: item.CLASS_NAME,
-        etc_otc_name: item.ETC_OTC_NAME,
-        embedding: embeddings[i],
-      })
+    const uniq = new Map<string, MedicineItem>()
+    items.forEach((it, i) => { if (!uniq.has(it.ITEM_SEQ)) uniq.set(it.ITEM_SEQ, it) })
+
+    const cols = [...UPSERT_COLS, 'embedding']
+    const placeholders: string[] = []
+    const params: unknown[] = []
+    let p = 1
+    const arr = [...uniq.values()]
+    for (const it of arr) {
+      const emb = embeddings[items.findIndex((x) => x.ITEM_SEQ === it.ITEM_SEQ)] ?? []
+      const vecLit = '[' + emb.map((x) => Number(x).toFixed(7)).join(',') + ']'
+      const rowPh: string[] = []
+      for (let c = 0; c < UPSERT_COLS.length; c++) rowPh.push(`$${p++}`)
+      rowPh.push(`$${p++}::vector`)
+      placeholders.push(`(${rowPh.join(',')})`)
+      params.push(
+        it.ITEM_SEQ, it.ITEM_NAME, it.ENTP_NAME, it.CHART, it.ITEM_IMAGE,
+        it.PRINT_FRONT, it.PRINT_BACK, it.DRUG_SHAPE, it.COLOR_CLASS1,
+        it.COLOR_CLASS2, it.LINE_FRONT, it.LINE_BACK, it.LENG_LONG,
+        it.LENG_SHORT, it.THICK, it.FORM_CODE_NAME, it.CLASS_NAME,
+        it.ETC_OTC_NAME, vecLit,
+      )
     }
-    const rows = [...rowMap.values()]
 
-    const { error } = await this.supabase
-      .from('medicines')
-      .upsert(rows, { onConflict: 'item_seq' })
+    const updateSet = cols
+      .filter((c) => c !== 'item_seq')
+      .map((c) => `${c} = EXCLUDED.${c}`)
+      .join(', ')
 
-    if (error) throw new Error(`Supabase upsert error: ${error.message}`)
+    const sql = `
+      INSERT INTO medicines (${cols.join(', ')})
+      VALUES ${placeholders.join(', ')}
+      ON CONFLICT (item_seq) DO UPDATE SET ${updateSet}
+    `
+    await this.repo.manager.query(sql, params)
   }
 
-  /** 이미 임베딩 완료된 item_seq 목록 조회 */
   private async getExistingSeqs(): Promise<Set<string>> {
-    const seqs = new Set<string>()
-    const PAGE = 1000
-    let from = 0
-
-    while (true) {
-      const { data, error } = await this.supabase
-        .from('medicines')
-        .select('item_seq')
-        .not('embedding', 'is', null)
-        .range(from, from + PAGE - 1)
-
-      if (error) {
-        console.error('[Ingestion] 기존 임베딩 조회 실패:', error.message)
-        break
-      }
-      if (!data || data.length === 0) break
-
-      for (const row of data) seqs.add(row.item_seq)
-      if (data.length < PAGE) break
-      from += PAGE
-    }
-
-    return seqs
+    const rows = await this.repo.manager.query(
+      'SELECT item_seq FROM medicines WHERE embedding IS NOT NULL',
+    ) as { item_seq: string }[]
+    return new Set(rows.map((r) => r.item_seq))
   }
 
-  /** 수집 실행 — 이미 임베딩된 항목은 건너뛰고 나머지만 처리 */
   async run(maxPages?: number): Promise<{ processed: number; total: number }> {
     console.log('[Ingestion] 수집 시작')
 
@@ -200,7 +182,6 @@ export class IngestionService {
     let skipped = 0
 
     const processPage = async (pageItems: MedicineItem[]) => {
-      // 이미 임베딩된 항목 필터링 + 페이지 내 중복 제거
       const seen = new Set<string>()
       const newItems = pageItems.filter((item) => {
         if (existingSeqs.has(item.ITEM_SEQ) || seen.has(item.ITEM_SEQ)) return false
@@ -224,10 +205,8 @@ export class IngestionService {
       }
     }
 
-    // 1페이지 먼저 처리
     await processPage(firstItems)
 
-    // 2페이지부터 fetch 즉시 처리 (메모리에 쌓지 않음)
     for (let page = 2; page <= pagesToFetch; page++) {
       const { items } = await this.fetchPage(page)
       await processPage(items)
@@ -237,7 +216,6 @@ export class IngestionService {
     return { processed, total: totalCount }
   }
 
-  /** e약은요 API 페이지 단위 조회 */
   private async fetchDrugInfoPage(pageNo: number): Promise<{ items: DrugInfoItem[]; totalCount: number }> {
     const url =
       `${this.drugInfoApiUrl}?serviceKey=${process.env.DATA_GO_KR_API_KEY}` +
@@ -261,30 +239,18 @@ export class IngestionService {
     return { items, totalCount: json.body?.totalCount ?? 0 }
   }
 
-  /** HTML 태그 제거 */
   private stripHtml(text: string | null): string | null {
     if (!text) return null
     return text.replace(/<[^>]*>/g, '').trim() || null
   }
 
-  /** e약은요 데이터 수집 — 페이지 단위로 전체 순회, 이미 수집된 item_seq 스킵 */
   async runDrugInfo(): Promise<{ processed: number; skipped: number; total: number }> {
     console.log('[DrugInfo] e약은요 수집 시작 (페이지 단위)')
 
-    // 이미 efcy가 있는 item_seq 조회
-    const existingSeqs = new Set<string>()
-    let from = 0
-    while (true) {
-      const { data } = await this.supabase
-        .from('medicines')
-        .select('item_seq')
-        .not('efcy', 'is', null)
-        .range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const row of data) existingSeqs.add(row.item_seq)
-      if (data.length < 1000) break
-      from += 1000
-    }
+    const existingRows = await this.repo.manager.query(
+      'SELECT item_seq FROM medicines WHERE efcy IS NOT NULL',
+    ) as { item_seq: string }[]
+    const existingSeqs = new Set(existingRows.map((r) => r.item_seq))
     console.log(`[DrugInfo] 이미 수집된 항목: ${existingSeqs.size}개 (스킵)`)
 
     const { items: firstItems, totalCount } = await this.fetchDrugInfoPage(1)
@@ -305,23 +271,27 @@ export class IngestionService {
           continue
         }
 
-        const { error } = await this.supabase
-          .from('medicines')
-          .update({
-            efcy: this.stripHtml(info.efcyQesitm),
-            use_method: this.stripHtml(info.useMethodQesitm),
-            side_effect: this.stripHtml(info.seQesitm),
-            atpn: this.stripHtml(info.atpnQesitm),
-            intrc: this.stripHtml(info.intrcQesitm),
-            deposit_method: this.stripHtml(info.depositMethodQesitm),
-          })
-          .eq('item_seq', info.itemSeq)
-
-        if (error) {
+        try {
+          const result = await this.repo.update(
+            { item_seq: info.itemSeq },
+            {
+              efcy: this.stripHtml(info.efcyQesitm),
+              use_method: this.stripHtml(info.useMethodQesitm),
+              side_effect: this.stripHtml(info.seQesitm),
+              atpn: this.stripHtml(info.atpnQesitm),
+              intrc: this.stripHtml(info.intrcQesitm),
+              deposit_method: this.stripHtml(info.depositMethodQesitm),
+            },
+          )
+          if (result.affected && result.affected > 0) {
+            processed++
+            existingSeqs.add(info.itemSeq)
+          } else {
+            skipped++
+          }
+        } catch (err) {
+          console.error('[DrugInfo] 업데이트 오류:', (err as Error).message)
           skipped++
-        } else {
-          processed++
-          existingSeqs.add(info.itemSeq)
         }
       }
       console.log(`[DrugInfo] ${processed} 처리 / ${skipped} 스킵 (전체 ${totalCount}개)`)

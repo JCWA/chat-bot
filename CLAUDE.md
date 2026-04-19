@@ -39,14 +39,13 @@
 - 빌드 확인: `npm run build`
 - 개발 서버: `npm run start:dev`
 - 프로덕션 서버: `npm run build && npm run start` (dist/ 기반)
-- 명령 실행 전 현재 디렉토리가 `/Users/channy/Documents/spaceoddity/chat-bot`인지 확인
+- 명령 실행 전 현재 디렉토리가 `/Users/channy/Documents/projects/chat-bot`인지 확인
 
 ---
 
 ## 금지 사항
 
 - `chat-server` 원본 코드 직접 복사 금지 — 참고만 허용
-- TypeORM, PostgreSQL 관련 패키지 설치 금지
 - 세션 기반 인증 코드 작성 금지
 - `any` 타입 남용 금지 — 불가피한 경우 `// eslint-disable-next-line` 주석 추가
 
@@ -68,10 +67,12 @@
 - 정형 데이터(이미지, 약 목록)는 LLM에 맡기지 말고 코드로 직접 전달
 - 한글 전용 출력 규칙 + sanitizeResponse() 후처리 필수
 
-### Supabase
-- `.or()` 체이닝은 AND가 아님 → 정확한 AND 검색은 RPC 함수로
-- `CREATE OR REPLACE FUNCTION`으로 반환 타입 변경 불가 → `DROP FUNCTION` 먼저 실행
-- RPC 반환 타입 변경 시 마이그레이션에 DROP + CREATE 포함
+### PostgreSQL (self-host via pgvector on 공유 Postgres, Supabase 제거)
+- DB/벡터 스토리지는 공유 Postgres(`imresamu/postgis:17-3.5-bundle0` — pgvector 포함)의 `medi` 데이터베이스 사용
+- `medicines` 테이블 + `match_medicines` / `search_by_appearance` 함수는 `database/schema.sql` 참조
+- Nest 레이어는 TypeORM(`@nestjs/typeorm`). 벡터 관련 쿼리(유사도·함수 호출)는 `repo.manager.query` 로 raw SQL
+- 함수 반환 타입 변경 시 `DROP FUNCTION ... CASCADE` 먼저 실행 후 재생성
+- TypeORM `synchronize: false` 고정 — 스키마 변경은 항상 `database/*.sql` 마이그레이션으로
 
 ### 검색
 - ILIKE 검색에 짧은 토큰(2자 이하) 사용 시 과매칭 → 최소 3자 또는 정확 매칭

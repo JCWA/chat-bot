@@ -16,16 +16,19 @@
   "dependencies": {
     "@huggingface/inference": "^4.13.15",
     "@nestjs/common": "^10.0.0",
+    "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.4.7",
+    "@nestjs/typeorm": "^10.0.2",
     "@nestjs/websockets": "^10.4.7",
-    "@supabase/supabase-js": "^2.102.1",
     "dotenv": "^17.4.1",
+    "pg": "^8.20.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.1",
-    "tsconfig-paths": "^4.2.0"
+    "tsconfig-paths": "^4.2.0",
+    "typeorm": "^0.3.28"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

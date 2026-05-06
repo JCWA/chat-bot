@@ -7,8 +7,8 @@
 ## 세션 시작 루틴
 
 1. `CONTEXT.md` 읽기 — 프로젝트 목적, 스택, 봇 플로우 파악
-2. 태스크는 **Vikunja** (`tasks.channy.dev`, 프로젝트 #4 "의약품 챗봇") 단일 소스. 사용자 지시 또는 in-session 합의로 새 태스크가 생기면 거기서 생성/완료.
-3. **코드 변경 시 관련 md 파일도 함께 업데이트** (CONTEXT.md, CLAUDE.md). Production 결함 카탈로그는 `medi-validation/NOTES.md` 에.
+2. 이 레포 태스크는 **Vikunja 프로젝트 #4 "의약품 챗봇"** 에 등록 (Vikunja URL·토큰·auto-task 트리거 규칙은 hub `~/Documents/projects/CLAUDE.md` 참조).
+3. 코드 변경 시 `CONTEXT.md` 도 같이 업데이트. Production 결함 카탈로그는 `medi-validation/NOTES.md` (검증 루프가 grep 으로 참조).
 
 ---
 

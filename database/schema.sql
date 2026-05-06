@@ -136,16 +136,18 @@ LANGUAGE sql STABLE AS $$
       SELECT 1 FROM unnest(p_shapes) s
       WHERE drug_shape ILIKE '%' || s || '%'
     ))
-    -- 식별문자 필터 (AND): 1~2자는 정확 매칭, 3자 이상은 부분 매칭
-    AND (p_prints IS NULL OR EXISTS (
+    -- 식별문자 필터 (AND): 1~2자는 정확 매칭, 3자 이상은 부분 매칭. 모든 토큰이 매치돼야 통과.
+    -- print_back NULL 일 때 ILIKE 가 NULL → NOT NULL → 행이 새는 문제 방지로 coalesce 적용.
+    AND (p_prints IS NULL OR NOT EXISTS (
       SELECT 1 FROM unnest(p_prints) p
-      WHERE
+      WHERE NOT (
         CASE WHEN length(p) <= 2 THEN
-          print_front = p OR print_back = p
+          coalesce(print_front,'') = p OR coalesce(print_back,'') = p
         ELSE
-          print_front ILIKE '%' || p || '%'
-          OR print_back ILIKE '%' || p || '%'
+          coalesce(print_front,'') ILIKE '%' || p || '%'
+          OR coalesce(print_back,'') ILIKE '%' || p || '%'
         END
+      )
     ))
   ORDER BY
     -- 식별문자 정확 매칭 우선 정렬

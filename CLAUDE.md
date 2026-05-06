@@ -7,10 +7,8 @@
 ## 세션 시작 루틴
 
 1. `CONTEXT.md` 읽기 — 프로젝트 목적, 스택, 봇 플로우 파악
-2. `TASKS.md` 읽기 — 현재 상태 및 다음 태스크 확인
-3. 미완료 태스크 중 가장 번호가 낮은 것부터 순서대로 실행
-4. 태스크 완료 시 즉시 `TASKS.md`의 해당 항목을 `[x]`로 업데이트
-5. **코드 변경 시 관련 md 파일도 함께 업데이트** (CONTEXT.md, TASKS.md, CLAUDE.md)
+2. 태스크는 **Vikunja** (`tasks.channy.dev`, 프로젝트 #4 "의약품 챗봇") 단일 소스. 사용자 지시 또는 in-session 합의로 새 태스크가 생기면 거기서 생성/완료.
+3. **코드 변경 시 관련 md 파일도 함께 업데이트** (CONTEXT.md, CLAUDE.md). Production 결함 카탈로그는 `medi-validation/NOTES.md` 에.
 
 ---
 
@@ -29,7 +27,7 @@
 
 - 새 파일 작성 전 해당 경로가 존재하는지 확인
 - 기존 파일 덮어쓰기 전 내용 확인 후 수행
-- `src/` 외부 파일(TASKS.md, CONTEXT.md, CLAUDE.md)은 내용 업데이트 외 삭제 금지
+- `src/` 외부 파일(CONTEXT.md, CLAUDE.md)은 내용 업데이트 외 삭제 금지
 
 ---
 
@@ -87,12 +85,12 @@
 ## 태스크 실행 템플릿
 
 ```
-1. TASKS.md에서 태스크 내용 확인
+1. Vikunja 에서 태스크 내용 확인 (또는 in-session 합의 사항 확인)
 2. 필요한 파일 경로 확인 (Glob 툴)
 3. 코드 작성 (Write / Edit 툴)
 4. 빌드/린트 에러 확인 (npm run build)
-5. TASKS.md 해당 항목 [x] 체크
-6. 관련 md 파일 업데이트 (CONTEXT.md 등)
+5. Vikunja 태스크 done 처리 (신규 in-session 태스크면 done=true 로 생성)
+6. 관련 md 파일 업데이트 (CONTEXT.md, NOTES.md 등 — 코드와 결합되는 컨텍스트만)
 7. 다음 태스크로 이동
 ```
 
@@ -102,6 +100,6 @@
 
 Claude Code 세션이 컨텍스트 한계에 가까워지면:
 1. 현재 작업 중인 파일 저장 확인
-2. `TASKS.md` 현재 상태 업데이트 (완료된 태스크 체크)
-3. "세션 종료 — TASK-XX까지 완료" 메시지 출력
-4. 다음 세션에서 이 파일을 읽고 재개
+2. Vikunja 에 진행 중 태스크 상태 반영 (done 또는 progress 갱신)
+3. 세션 종료 메시지 출력 (마지막으로 처리한 Vikunja 태스크 번호 인용)
+4. 다음 세션에서 CONTEXT.md + Vikunja 미완료 목록을 읽고 재개

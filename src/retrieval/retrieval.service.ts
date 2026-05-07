@@ -208,11 +208,16 @@ export class RetrievalService {
     const filtered = [...new Set(expanded)].filter((t) => !excluded.has(t) && t.length >= 2)
     if (!filtered.length) return []
 
+    // class_name 은 "해열.진통.소염제" / "기타의 순환계용약" 처럼 점·공백으로 구분된 복합어가 흔함.
+    // 사용자 토큰("해열진통제")은 separator 없이 들어오므로 비교 전 class_name 의 공백/구두점을 제거.
     const qb = this.repo.createQueryBuilder('m').select(SELECT_COLS.split(',').map((c) => `m.${c.trim()}`))
     const conds: string[] = []
     const params: Record<string, string> = {}
     filtered.forEach((t, i) => {
-      conds.push(`m.class_name ILIKE :c${i}`, `m.efcy ILIKE :e${i}`)
+      conds.push(
+        `regexp_replace(coalesce(m.class_name,''), '[[:space:].,/\\-]', '', 'g') ILIKE :c${i}`,
+        `m.efcy ILIKE :e${i}`,
+      )
       params[`c${i}`] = `%${t}%`
       params[`e${i}`] = `%${t}%`
     })
